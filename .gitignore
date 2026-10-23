@@ -1,0 +1,23 @@
+# Guia de implementação local (ignorado no Git)
+IMPLEMENTACAO_SOCKET.md
+
+# Compilados Java
+out/
+*.class
+
+# Variáveis de ambiente e segredos
+.env
+.env.*
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Logs
+*.log
