@@ -1,294 +1,322 @@
-# HelpDesk — Sistema de Chamados de TI
+# HelpDesk — Backend Socket (WebSocket & Real-Time Events)
 
-> **Projeto Integrador IV** — Sistema de gerenciamento de chamados de suporte técnico com painel administrativo, fluxo de status em tempo real e notificações via Socket TCP.
+> **Projeto Integrador IV · Grupo 2** — Servidor de mensageria concorrente em tempo real, implementando o protocolo WebSocket (RFC 6455) e soquetes TCP em Java 21 Puro para distribuição de eventos de chamados e notificações push.
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.4.3-00B4D8?style=for-the-badge&logo=git&logoColor=white" />
-  <img src="https://img.shields.io/badge/Java-Puro-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" />
-  <img src="https://img.shields.io/badge/PostgreSQL-15-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
-  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
-  <a href="https://help-desk-pi-iv.vercel.app" target="_blank">
-    <img src="https://img.shields.io/badge/Acessar_Aplicação-Vercel-000?style=for-the-badge&logo=vercel&logoColor=white" />
-  </a>
+  <img src="https://img.shields.io/badge/M%C3%B3dulo-Backend--Socket-00B4D8?style=for-the-badge&logo=git&logoColor=white" />
+  <img src="https://img.shields.io/badge/Vers%C3%A3o-v0.3.1-10B981?style=for-the-badge&logo=git&logoColor=white" />
+  <img src="https://img.shields.io/badge/Java-21_Puro-ED8B00?style=for-the-badge&logo=openjdk&logoColor=white" />
+  <img src="https://img.shields.io/badge/Protocolo-RFC_6455_WebSocket-7C3AED?style=for-the-badge&logo=socketdotio&logoColor=white" />
+  <img src="https://img.shields.io/badge/Deploy-Render_Cloud-000?style=for-the-badge&logo=render&logoColor=white" />
+  <img src="https://img.shields.io/badge/Sync-GitHub_Actions-2088FF?style=for-the-badge&logo=githubactions&logoColor=white" />
 </p>
 
 ---
 
 ## Sumário
 
-- [Acesso à Aplicação](#acesso-à-aplicação)
-- [Sobre o Projeto](#sobre-o-projeto)
-  - [Fluxo de Status dos Chamados](#fluxo-de-status-dos-chamados)
-- [Status Atual (v0.4.3)](#status-atual-v043)
+- [Visão Geral do Módulo](#visão-geral-do-módulo)
+- [Status Atual do Módulo (v0.3.1)](#status-atual-do-módulo-v031)
 - [Histórico de Versões (Changelog)](#histórico-de-versões-changelog)
-- [Arquitetura](#arquitetura)
-- [Stack Tecnológica](#stack-tecnológica)
-- [Estrutura do Projeto](#estrutura-do-projeto)
-- [Banco de Dados](#banco-de-dados)
-- [Equipe e Licença](#equipe-e-licença)
+- [Responsável & Papel no Projeto](#responsável--papel-no-projeto)
+- [Arquitetura e Concorrência](#arquitetura-e-concorrência)
+  - [Estruturas de Dados Concorrentes](#estruturas-de-dados-concorrentes)
+  - [Fluxo de Comunicação entre Módulos](#fluxo-de-comunicação-entre-módulos)
+- [Implementação da RFC 6455 (Java Puro)](#implementação-da-rfc-6455-java-puro)
+  - [Handshake HTTP para WebSocket](#handshake-http-para-websocket)
+  - [Tratamento de Frames & Máscaras](#tratamento-de-frames--máscaras)
+  - [Health Check HTTP & Prevenção de Cold Start](#health-check-http--prevenção-de-cold-start)
+- [Contratos de Integração Atendidos](#contratos-de-integração-atendidos)
+- [Decisões Arquiteturais (ADRs) & Descarte de Ideias](#decisões-arquiteturais-adrs--descarte-de-ideias)
+  - [ADR 0001: Estruturas Concorrentes & Descarte de Chat](#adr-0001-estruturas-concorrentes--descarte-de-chat)
+  - [ADR 0002: Notificações em Tempo Real (Push Ping)](#adr-0002-notificações-em-tempo-real-push-ping)
+- [Estrutura do Repositório](#estrutura-do-repositório)
+- [Como Executar Localmente](#como-executar-localmente)
+  - [Pré-requisitos](#pré-requisitos)
+  - [Variáveis de Ambiente](#variáveis-de-ambiente)
+  - [Compilação e Execução Manual](#compilação-e-execução-manual)
+  - [Execução via Docker](#execução-via-docker)
+- [Pipeline de CI/CD (Sync com o Monorepo)](#pipeline-de-cicd-sync-com-o-monorepo)
 
 ---
 
-## Acesso à Aplicação
+## Visão Geral do Módulo
 
-O sistema está publicado e acessível diretamente pelo navegador:
+O **Backend Socket** é o componente de infraestrutura responsável por garantir que o Help Desk opere de forma reativa e instantânea. Ele atua como um hub de mensageria leve, mantendo sessões WebSocket persistentes com os navegadores dos usuários e escutando eventos gerados pelo **Backend API**.
 
-👉 **[https://help-desk-pi-iv.vercel.app](https://help-desk-pi-iv.vercel.app)**
-
----
-
-## Sobre o Projeto
-
-Sistema Help Desk corporativo voltado para ambientes corporativos e educacionais que permite:
-
-- **Clientes / Solicitantes**: Abertura rápida de chamados, acompanhamento de status em tempo real e histórico de solicitações.
-- **Técnicos de TI**: Visualização da fila de chamados, auto-atribuição ("Me Atribuir"), atualização de status, registro de atendimentos e resolução.
-- **Administradores**: Gestão de usuários, gerenciamento de categorias, métricas de SLA e controle de acesso baseado em papéis (RBAC).
-
-### Fluxo de Status dos Chamados
-
-```
-┌─────────┐      Atribuir Técnico      ┌───────────────┐      Concluir      ┌────────────┐
-│  NOVO   │  ───────────────────────>  │   ATRIBUÍDO   │  ───────────────>  │  FECHADO   │
-│ (novo)  │                            │  (atribuido)  │                    │ (fechado)  │
-└─────────┘                            └───────┬───────┘                    └────────────┘
-                                               │
-                                               │ Impedimento / Pendência
-                                               ▼
-                                       ┌───────────────┐
-                                       │ NÃO RESOLVIDO │
-                                       │(nao_resolvido)│
-                                       └───────────────┘
-```
+Principais atribuições:
+1. **Orquestração de Sessões WebSocket**: Gerencia o ciclo de vida das conexões ativas (autenticação, keep-alive, desconexões e reconexões).
+2. **Distribuição de Eventos de Chamados (`chamadoAtualizado`)**: Notifica instantaneamente os painéis de técnicos e clientes sempre que um chamado é aberto, atribuído ou alterado.
+3. **Disparo de Notificações Push**: Envia alertas leves em tempo real direcionados ao usuário destinatário, atualizando o badge visual e acionando feedback sonoro.
+4. **Interoperabilidade Dual (HTTP + WS)**: Atende requisições de Health Check na mesma porta pública do WebSocket, evitando que provedores de nuvem (Render) suspendam a aplicação por inatividade.
 
 ---
 
-## Status Atual (v0.4.3)
+## Status Atual do Módulo (v0.3.1)
 
-> **Rota pública de Health Check e prevenção de cold start no Render.**
-
-- **Health Check & Keep-Alive**: Implementação do handler público `HealthHandler` mapeado nas rotas `/health`, `/api/health` e na raiz `/`.
-- **Prevenção de Cold Start (Render)**: Compatibilidade total com serviços de Cron Jobs e monitores de uptime (sem bloqueio de autenticação).
-- **Correção de 404 na Raiz**: Tratamento elegante na URL base da API direcionando para a aplicação frontend na Vercel.
-- **Documento de Escopo**: Inclusão do documento oficial de escopo do projeto (`docs/escopo.pdf`) com a definição completa do sistema Help Desk.
-- **Equipe do Projeto**: Identificação dos membros da equipe com respectivos RAs no README.
-- **CRUD via API REST**: Todas as operações de chamados (criar, listar, editar, deletar) passam pela API Java e persistem no banco de dados Neon.
-- **Endpoint DELETE**: Backend suporta exclusão de chamados com limpeza cascata (timeline + notificações + ticket).
-- **Dashboard 100% responsivo com Neon DB**: Métricas calculadas puramente a partir dos dados persistidos no PostgreSQL.
-- **Sistema de tradução (i18n)**: Módulo `i18n.js` garante que a interface continue em PT-BR para o usuário final.
-- **Módulo API centralizado**: `api.js` encapsula todas as chamadas HTTP com autenticação via Bearer token.
-- **Autenticação & Sessão**: Login e registro com validação, geração de token e mapeamento no frontend.
-- **Regras de Negócio de Chamados**: Status automático, auto-atribuição de técnicos, RBAC por perfil e categorias dinâmicas do Neon DB.
+> **Servidor WebSocket RFC 6455 operacional em Java 21 Puro, com Health Check HTTP integrado, pipeline CI/CD de sincronização automática com o monorepo e documentação arquitetural especializada.**
 
 ---
 
 ## Histórico de Versões (Changelog)
 
-### [v0.4.3] — Health Check Público e Prevenção de Cold Start no Render
+### [v0.3.1] — Aprimoramento do README.md e Documentação Especializada do Módulo Socket
 *Versão atual*
 
-- **Backend-API**:
-  - Implementado `HealthHandler` com endpoints públicos `/health`, `/api/health` e `/`.
-  - Suporte aos métodos `GET` e `HEAD` com resposta `200 OK` contendo status da API, versão e link do frontend.
-  - Eliminação de erro 404 (*No context found for request*) na raiz do deploy no Render.
-  - Habilitada integração com serviços de Cron Jobs / Keep-Alive externos para evitar *cold start* no plano gratuito do Render.
+- **Documentação**:
+  - Reestruturação completa do `README.md` focada especificamente na arquitetura interna do microsserviço **Backend Socket**.
+  - Detalhamento do protocolo RFC 6455 (handshake HTTP `101 Switching Protocols`, máscara XOR de 4 bytes e opcodes de controle).
+  - Mapeamento dos contratos de tempo real (`CT18`, `CT19`, `CT22`), ADRs (`0001` e `0002`) e instruções de execução e CI/CD.
 
-### [v0.4.2] — Documentação de Escopo e Identificação da Equipe
+### [v0.3.0] — Base do Servidor WebSocket (RFC 6455), Health Check HTTP e Sync CI/CD
+
+- **Backend Socket**:
+  - Implementação de `WebSocketUtil.java` para handshake e tratamento de frames RFC 6455 em Java puro.
+  - Implementação de `Main.java` com `ServerSocket` e `ExecutorService` (`CachedThreadPool`) para conexões concorrentes.
+  - Suporte nativo a rota pública HTTP `/health` e `/` na mesma porta do WebSocket para prevenção de *cold start* no Render.
+- **CI/CD**:
+  - Adição do workflow GitHub Actions (`.github/workflows/sync-to-main.yml`) para sincronização automática de código com o repositório principal.
+
+### [v0.2.1] — Correção e Revisão de Escopo na ADR 0001
+
+- **Documentação / ADR**:
+  - Correção de seções faltantes em `docs/adr/0001-servidor.md` e formalização do descarte de salas de chat por chamado em favor de eventos de chamados e notificações push.
+
+### [v0.2.0] — Especificação de Requisitos, Fluxos de Integração e ADRs
 
 - **Documentação**:
-  - Adicionado documento oficial de escopo do projeto em `docs/escopo.pdf`.
-- **README**:
-  - Inclusão dos membros da equipe com RAs na seção Equipe e Licença.
-  - Atualização do badge de versão e status atual para v0.4.2.
+  - Inclusão do documento oficial de escopo do projeto (`docs/escopo.pdf`).
+  - Adição da `ADR 0002` (Notificações em Tempo Real via Push Ping) e contratos de fluxo em `docs/fluxos/`.
 
-### [v0.4.1] — Integração Full-Stack Neon DB, i18n e Dashboard Reativo
+### [v0.1.0] — Inicialização do Microsserviço Backend-Socket Desacoplado
 
-- **Backend**:
-  - Adicionado endpoint `DELETE /api/chamados/:id` com exclusão em cascata transacional (timeline → notificações → ticket).
-- **Frontend — Integração com API**:
-  - Novo módulo `api.js`: comunicação centralizada com o backend (fetch + Bearer token + mapeamento de dados + notificações).
-  - Todas as operações CRUD (criar, editar, deletar chamados) agora persistem no banco via API REST.
-  - Após cada operação de escrita, os dados são recarregados do backend (`reloadTickets()`).
-- **Frontend — Internacionalização (i18n)**:
-  - Novo módulo `i18n.js`: sistema de tradução global EN → PT-BR.
-  - Variáveis internas migradas para inglês (`title`, `status`, `priority`, `createdAt`, etc.).
-  - Interface do usuário permanece 100% em português via `i18n.t()`, `i18n.status()`, `i18n.priority()`.
-- **Dashboard e Data Layer Responsivos com Neon DB**:
-  - `data.js` completamente reestruturado para ser 100% reativo e fiel ao modelo de dados do Neon DB.
-  - Removidos status inexistentes no banco (como `IN_PROGRESS` e `PENDING`) e trends fake (+12%, etc.).
-  - Dashboard calcula métricas reais: Total, Novos (aguardando), Atribuídos (em atendimento), Resolvidos e Não Solucionados.
-  - Gráficos de distribuição por status e por categorias reais do banco de dados Neon.
-  - Badges da sidebar e sino de notificações reativos, atualizados automaticamente em cada ação CRUD.
-  - Botão de recarga e indicador de status de conexão com a API no topo do Dashboard.
-
-### [v0.4] — Backend-API Pronto, Integrado e Regras de Negócio de Chamados
-
-- **Backend-API**:
-  - Implementação completa dos DAOs (`UserDao`, `TicketDao`, `CategoryDao`, `NotificationDao`, `TicketTimelineDao`) com JDBC nativo.
-  - Implementação dos Handlers HTTP REST (`LoginHandler`, `UserHandler`, `TicketHandler`, `CategoryHandler`, `NotificationHandler`).
-  - Suporte completo a CORS com preflight `OPTIONS` e padronização de rotas com prefixo `/api` e raiz.
-  - Tratamento de variáveis de ambiente para conexão segura ao banco PostgreSQL (`DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`).
-- **Frontend & Regras de Negócio**:
-  - **Criação de Chamado**: Interface limpa exibindo apenas Título, Descrição, Categoria e Prioridade. O solicitante é herdado da sessão e campos de técnico/status foram omitidos na criação.
-  - **Auto-Atribuição**: Botão "Me Atribuir" no card de ações rápidas e detalhe do chamado para técnicos de suporte.
-  - **Status Automático**: Ao atribuir um técnico a um chamado em status "novo", o sistema atualiza automaticamente para "atribuído".
-  - **Permissões (RBAC)**: Apenas usuários com cargo de TI (técnico/admin) visualizam e editam técnico, status e solicitante no modal de chamado.
-  - **Prioridade e Categorias**: Prioridade "Normal" adicionada como padrão; 8 categorias padrão integradas ao dropdown.
-  - **Design Tokens**: Adição de estilos CSS e badges para status `novo` e `atribuído` e prioridade `normal`.
-
-### [v0.3] — Deploy Cloud & Autenticação Integrada
-- Tela de cadastro (`register.html`) e integração completa com `login.html`.
-- Migração de endpoints para deploy em nuvem e banco de dados Neon.tech.
-- Mapeamento de autenticação no frontend via `localStorage` e redirecionamento de rotas protegidas.
-- Remoção de dados fictícios em favor da integração com a API.
-- Correção de pré-flight CORS e variáveis de ambiente no deploy.
-
-### [v0.2] — Estrutura Backend, Docker e Modelagem Relacional
-- Estruturação dos módulos `backend-api` (API REST) e `backend-socket` (Servidor Socket TCP).
-- Inclusão das bibliotecas compiladas na pasta `lib/`: Driver JDBC PostgreSQL 42.7.3 e Gson 2.11.0.
-- Criação dos `Dockerfile`s com multi-stage build para compilação e execução leve com OpenJDK.
-- Modelagem do banco de dados relacional documentada em `docs/database_modeling.md` e arquitetura em `docs/backend_architecture.md`.
-- Definição das tabelas centrais: `users`, `categories`, `tickets`, `ticket_timeline` e `notifications`.
-
-### [v0.1] — Frontend Base & Design System SPA
-- Design System completo com variáveis CSS (Light e Dark mode, paleta de cores corporativa, tipografia moderna).
-- Layout responsivo com sidebar retrátil, header com ações rápidas e grid adaptável.
-- Dashboard com cards de métricas (Total, Abertos, Em Andamento, Concluídos, Críticos).
-- Sistema de notificações interativo no header com dropdown, contador de não lidas e marcação rápida.
-- Dropdown de perfil de usuário com informações de sessão.
-- Telas de listagem em tabela e cards com busca e filtros por status/prioridade.
+- **Infraestrutura**:
+  - Estruturação inicial do repositório dedicado para o servidor de sockets, com `Dockerfile` multi-stage e dependências base (`postgresql.jar` e `gson.jar`).
 
 ---
 
-## Arquitetura
+## Responsável & Papel no Projeto
 
-O sistema é concebido para operar em contêineres independentes e leves:
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                    Cliente (Browser)                    │
-│              HTML5 / CSS3 Vanilla / JS ES6+             │
-└──────────┬──────────────────────────────┬───────────────┘
-           │ HTTP/REST (:8000)            │ TCP Socket (:5000)
-           ▼                              ▼
-┌─────────────────────┐    ┌─────────────────────────────┐
-│  Contêiner 1: API   │    │  Contêiner 2: Socket Server │
-│  (com.sun.httpserver)│    │  (java.net.ServerSocket)    │
-│  CRUD + Auth + DAOs │    │  Tempo real + Notificações  │
-└──────────┬──────────┘    └──────────────┬──────────────┘
-           │ JDBC                          │ JDBC
-           ▼                               ▼
-┌─────────────────────────────────────────────────────────┐
-│            Contêiner 3: PostgreSQL (:5432)              │
-│                 (Local ou Neon.tech)                    │
-└─────────────────────────────────────────────────────────┘
-```
+* **Responsável pelo Módulo**: Cauã Vasconcelos Grecco De Faria (25006367)
+* **Repositório Oficial**: [pi4-2026-2-0102-grupo2-backend-socket](https://github.com/cauagreccodev/pi4-2026-2-0102-grupo2-backend-socket)
+* **Repositório Central do Grupo**: [pi4-2026-2-0102-grupo2](https://github.com/cauagreccodev/pi4-2026-2-0102-grupo2)
+* **Frontend**: [pi4-0102-g2-frontend](https://github.com/Vinicius-Heinzl/pi4-0102-g2-frontend) (Vinicius Fortes Heinzl)
+* **Backend API & Banco**: [backend-api](https://github.com/Shinypuc/backend-api) (Kaue Rodrigues Seixas)
 
 ---
 
-## Stack Tecnológica
+## Arquitetura e Concorrência
 
-| Camada | Tecnologia | Detalhes |
-|:---|:---|:---|
-| **Frontend** | HTML5, CSS3 (Vanilla), JS (ES6+) | SPA sem frameworks, design system próprio, dark/light mode |
-| **Backend API** | Java Puro (OpenJDK 17+) | `com.sun.net.httpserver`, JDBC Nativo, DAOs, sem ORM |
-| **Backend Socket** | Java Puro (OpenJDK 17+) | `java.net.ServerSocket` com gerenciamento de threads |
-| **Banco de Dados** | PostgreSQL 15+ | Hospedado no Neon.tech (cloud) / PostgreSQL local |
-| **Serialização JSON**| Google Gson 2.11.0 | Conversão de DTOs e entidades |
-| **Containerização** | Docker | Builds leves multi-stage |
-| **Deploy** | Vercel + Neon | Vercel (Frontend) · Neon (Banco de Dados) |
+Construído sem frameworks externos (como Spring Boot, Netty ou Micronaut), o servidor utiliza exclusivamente os recursos concorrentes da biblioteca padrão do Java (`java.util.concurrent`) e os sockets de rede (`java.net.ServerSocket`).
+
+### Estruturas de Dados Concorrentes
+
+Conforme definido na **ADR 0001**, o estado de memória do servidor foi projetado para alta concorrência *thread-safe* sem bloqueios globais:
+
+- **`ConcurrentHashMap<Integer, Set<Session>>`**: Mapeia o `userId` para o conjunto de conexões ativas daquele usuário, suportando múltiplos dispositivos e abas simultâneas com operações de busca e broadcast em $O(1)$.
+- **`LinkedBlockingQueue<String>` (Outbox por Cliente)**: Buffer de saída exclusivo de cada conexão. Nenhuma thread escreve diretamente no socket de outra, garantindo que clientes com conexões lentas ou instáveis não bloqueiem o loop de entrega global.
+- **`ExecutorService (CachedThreadPool)`**: Pool dinâmico de threads para processamento assíncrono e isolamento de I/O de rede.
+
+### Fluxo de Comunicação entre Módulos
+
+```
+  ┌─────────────────────────────────────────────────────────────┐
+  │                 Navegadores dos Usuários                    │
+  │     (Painel do Solicitante / Painel Kanban dos Técnicos)    │
+  └──────────────────────────────┬──────────────────────────────┘
+                                 │ ▲
+         1. Abre Conexão e       │ │ 4. Entrega Evento em Tempo Real
+         Autentica Token (CT19)  │ │    via WebSocket (CT22)
+                                 ▼ │
+                   ┌─────────────────────────────┐
+                   │       BACKEND SOCKET        │
+                   │    (Java 21 / RFC 6455)     │
+                   └─────────────▲───────────────┘
+                                 │
+                                 │ 3. Notifica via TCP Interno (:5001)
+                                 │    com INTERNAL_SECRET (CT18)
+                                 │
+                   ┌─────────────┴───────────────┐
+                   │         BACKEND API         │
+                   │  (Java 21 / com.sun.httpserver)
+                   └─────────────┬───────────────┘
+                                 │ 2. Grava Chamado e Timeline
+                                 ▼    com Transação Segura
+                   ┌─────────────────────────────┐
+                   │    PostgreSQL 15+ (Neon)    │
+                   └─────────────────────────────┘
+```
+
+1. O **Frontend** abre a conexão WebSocket na porta pública e envia o token de autenticação (`CT19: autenticarConexao`).
+2. O **Backend API** processa uma ação de negócio (ex: criação ou alteração de status) e consolida a transação no **PostgreSQL**.
+3. O **Backend API** aciona o **Backend Socket** via TCP interno na porta 5001 (`CT18: publicarEvento`).
+4. O **Backend Socket** identifica as sessões ativas dos interessados e transmite a atualização imediatamente via frames WebSocket (`CT22: chamadoAtualizado`).
 
 ---
 
-## Estrutura do Projeto
+## Implementação da RFC 6455 (Java Puro)
+
+A classe `com.helpdesk.socket.util.WebSocketUtil` traduz o fluxo de bytes do socket nativo em conformidade com o padrão da RFC 6455:
+
+### Handshake HTTP para WebSocket
+
+Ao receber uma conexão, o servidor lê as linhas HTTP iniciais:
+1. Verifica a presença do cabeçalho `Sec-WebSocket-Key`.
+2. Concatena a chave com a constante normativa (Magic GUID): `258EAFA5-E914-47DA-95CA-C5AB0DC85B11`.
+3. Calcula o hash criptográfico SHA-1 e codifica o resultado em Base64.
+4. Devolve a resposta padronizada com o status `HTTP/1.1 101 Switching Protocols`:
+   ```http
+   HTTP/1.1 101 Switching Protocols
+   Upgrade: websocket
+   Connection: Upgrade
+   Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=
+   ```
+
+### Tratamento de Frames & Máscaras
+
+- **Leitura**: Por determinação da especificação, todo frame enviado pelo cliente (navegador) possui uma máscara de 4 bytes (`Masked`). O servidor extrai a chave de máscara e aplica a operação XOR byte a byte para revelar o payload original.
+- **Tamanhos Suportados**: Decodifica comprimentos de payload padrão (até 125 bytes), estendidos de 16 bits (até 65.535 bytes) e de 64 bits.
+- **Tipos de Frames (Opcodes)**:
+  - `0x1`: Frame de Texto UTF-8.
+  - `0x8`: Frame de Fechamento da Conexão (`Close`).
+  - `0x9`: Frame de `Ping` (responde automaticamente com `0xA - Pong`).
+
+### Health Check HTTP & Prevenção de Cold Start
+
+Se a requisição inicial recebida não contiver `Sec-WebSocket-Key` (como requisições `GET /health`, `GET /` ou `HEAD`), o `WebSocketUtil` identifica o probe HTTP e responde imediatamente com `200 OK` e um JSON informativo:
+```json
+{
+  "status": "UP",
+  "service": "backend-socket",
+  "protocol": "websocket",
+  "version": "v0.4.3",
+  "frontend": "https://help-desk-pi-iv.vercel.app"
+}
+```
+Isso assegura compatibilidade com os cron jobs de keep-alive do plano gratuito do Render, eliminando cold starts sem necessidade de um servidor web separado.
+
+---
+
+## Contratos de Integração Atendidos
+
+As especificações contratuais do módulo estão documentadas na pasta [`docs/fluxos/`](./docs/fluxos/):
+
+| Contrato | Protocolo / Porta | Direção | Propósito | Atende |
+|:---|:---|:---|:---|:---:|
+| **[CT18](./docs/fluxos/CT18-publicarEvento.md)** | TCP Interno (:5001) | Backend API → Backend Socket | Recebe eventos de criação (`CREATED`) e alteração (`UPDATED`) de chamados protegidos por `INTERNAL_SECRET`. | E4, E5 |
+| **[CT19](./docs/fluxos/CT19-autenticarConexao.md)** | WebSocket (:5000) | Frontend → Backend Socket | Autentica a sessão do usuário com base no Bearer Token JWT e valida o perfil/departamento no banco. | E4, E5, E6 |
+| **[CT22](./docs/fluxos/CT22-chamadoAtualizado.md)** | WebSocket (:5000) | Backend Socket → Frontend | Transmite em tempo real a atualização do chamado para os solicitantes e técnicos conectados. | E4, E5 |
+
+---
+
+## Decisões Arquiteturais (ADRs) & Descarte de Ideias
+
+### ADR 0001: Estruturas Concorrentes & Descarte de Chat
+
+> **Documento:** [`docs/adr/0001-servidor.md`](./docs/adr/0001-servidor.md)
+
+* **Status:** Aceito (com escopo revisado).
+* **Decisão de Descarte Formal:**  
+  Durante a concepção inicial, avaliou-se a criação de salas de chat em tempo real por chamado (`ticketId` → conexões), buffer de mensagens em memória (`ConcurrentLinkedDeque`), filas de prioridade (`PriorityBlockingQueue`) e controle de SLA via `DelayQueue` (estilo Teams/WhatsApp).  
+  **Essa funcionalidade foi deliberadamente descartada do escopo** para simplificar a entrega, reduzir pontos de falha e garantir estabilidade. O servidor Socket foi focado estritamente na entrega confiável de eventos do Kanban (`chamadoAtualizado`) e notificações push. Toda a auditoria e histórico de mensagens permanecem transacionalmente salvos na tabela `ticket_timeline` do PostgreSQL via API REST.
+
+### ADR 0002: Notificações em Tempo Real (Push Ping)
+
+> **Documento:** [`docs/adr/0002-notificacao.md`](./docs/adr/0002-notificacao.md)
+
+* **Status:** Aceito.
+* **Mecânica Adotada:**  
+  Substituição de polling contínuo por envio de evento leve (`NOTIFICATION_PING`) via WebSocket diretamente às sessões ativas do usuário destinatário (`userId`). O frontend atualiza o contador no sino do header e reproduz feedback sonoro (*ping sound*).
+
+---
+
+## Estrutura do Repositório
 
 ```
-Help-Desk-PI-IV/
-├── frontend/                   # Interface do Usuário (SPA)
-│   ├── index.html              # Dashboard e painel principal
-│   ├── login.html              # Tela de login
-│   ├── register.html           # Tela de cadastro de novos usuários
-│   ├── css/
-│   │   ├── variables.css       # Tokens, paleta e temas (light/dark)
-│   │   ├── base.css            # Reset e tipografia global
-│   │   ├── layout.css          # Grid e estrutura da SPA
-│   │   ├── components.css      # Botões, tabelas, cards, modais e badges
-│   │   ├── animations.css      # Animações e micro-interações
-│   │   └── login.css           # Estilos das telas de autenticação
-│   └── js/
-│       ├── data.js             # Estado global e helpers (populado via API)
-│       ├── i18n.js             # Sistema de tradução EN → PT-BR
-│       ├── api.js              # Comunicação HTTP com o backend
-│       ├── theme.js            # Controle de tema light/dark
-│       ├── router.js           # Roteamento SPA client-side
-│       ├── components.js       # Renderização dinâmica dos componentes
-│       ├── auth.js             # Gestão de token, login e cadastro
-│       └── app.js              # Controlador central e regras de negócio
-├── backend-api/                # API REST em Java Puro (Contêiner 1)
-│   ├── Dockerfile              # Dockerfile de produção
+pi4-2026-2-0102-grupo2-backend-socket/
+├── .github/
+│   └── workflows/
+│       └── sync-to-main.yml    # Workflow automático de sincronização com o monorepo
+├── backend-socket/
+│   ├── Dockerfile              # Dockerfile multi-stage (build & runtime Alpine)
 │   ├── lib/
 │   │   ├── postgresql.jar      # Driver JDBC PostgreSQL 42.7.3
-│   │   └── gson.jar            # Gson 2.11.0
-│   └── src/com/helpdesk/api/
-│       ├── Main.java           # Ponto de entrada e registro de rotas
-│       ├── config/
-│       │   └── Database.java   # Conexão JDBC com pooling e env vars
-│       ├── dao/                # Camada de persistência (SQL nativo)
-│       │   ├── CategoryDao.java
-│       │   ├── NotificationDao.java
-│       │   ├── TicketDao.java
-│       │   ├── TicketTimelineDao.java
-│       │   └── UserDao.java
-│       ├── handler/            # Controladores HTTP (HttpHandler)
-│       │   ├── CategoryHandler.java
-│       │   ├── LoginHandler.java
-│       │   ├── NotificationHandler.java
-│       │   ├── TicketHandler.java
-│       │   └── UserHandler.java
-│       ├── model/              # Modelos de domínio
-│       │   ├── Category.java
-│       │   ├── Notification.java
-│       │   ├── Ticket.java
-│       │   ├── TicketTimeline.java
-│       │   └── User.java
-│       └── util/               # Utilitários auxiliares
-│           ├── AuthUtil.java
-│           ├── HttpHelper.java
-│           └── JsonUtil.java
-├── backend-socket/             # Servidor de Socket TCP (Contêiner 2 - a implementar)
-│   ├── Dockerfile
-│   └── lib/
-├── docs/                       # Documentação de arquitetura e banco
-│   ├── backend_architecture.md
-│   ├── database_modeling.md
-│   └── escopo.pdf              # Documento oficial de escopo do projeto
-└── .gitignore                  # Arquivos ignorados (segurança e envs)
+│   │   └── gson.jar            # Google Gson 2.11.0
+│   └── src/com/helpdesk/socket/
+│       ├── Main.java           # Entry point, ServerSocket e pool de threads
+│       └── util/
+│           └── WebSocketUtil.java # Handshake RFC 6455, decodificação de frames e Health Check
+├── docs/
+│   ├── adr/
+│   │   ├── 0001-servidor.md    # Registro de decisão de concorrência e descarte de chat
+│   │   └── 0002-notificacao.md # Registro de decisão de notificações push
+│   ├── fluxos/                 # Contratos CT18, CT19, CT22 e entregáveis E1 a E9
+│   │   ├── CT18-publicarEvento.md
+│   │   ├── CT19-autenticarConexao.md
+│   │   ├── CT22-chamadoAtualizado.md
+│   │   ├── visao-geral.md
+│   │   └── README.md
+│   └── escopo.pdf              # Especificação de requisitos oficial
+├── .gitignore
+└── README.md                   # Esta documentação especializada
 ```
 
 ---
 
-## Banco de Dados
+## Como Executar Localmente
 
-Modelagem relacional em 5 tabelas normalizadas:
+### Pré-requisitos
+- **Java JDK 21** instalado.
+- Acesso à internet para validar o banco de dados Neon (ou PostgreSQL 15 local).
 
-| Tabela | Finalidade |
-|:---|:---|
-| `users` | Usuários do sistema (`CLIENT`, `SUPPORT`, `ADMIN`) com hash de senha |
-| `categories` | Categorias técnicas de chamados |
-| `tickets` | Chamados de suporte com controle de status, prioridade e responsáveis |
-| `ticket_timeline` | Histórico cronológico de alterações e interações |
-| `notifications` | Notificações do sistema para os usuários |
+### Variáveis de Ambiente
 
-> O dicionário de dados completo e os relacionamentos estão detalhados em [`docs/database_modeling.md`](./docs/database_modeling.md).
+O servidor pode ser configurado via variáveis de ambiente ou utilizará portas e padrões seguros:
+
+| Variável | Padrão | Descrição |
+|:---|:---|:---|
+| `PORT` ou `WS_PORT` | `5000` | Porta pública para o handshake WebSocket e Health Check HTTP. |
+| `INTERNAL_PORT` | `5001` | Porta TCP interna para comunicação exclusiva com o Backend API. |
+| `INTERNAL_SECRET` | `secret-dev` | Segredo compartilhado com a API para autenticação de eventos (CT18). |
+| `JWT_SECRET` | `jwt-secret` | Chave HMAC compartilhada para validação de tokens de usuários (CT19). |
+| `DATABASE_URL` | *Neon DB URL* | String de conexão JDBC segura com o banco PostgreSQL. |
+
+### Compilação e Execução Manual
+
+A partir do diretório raiz deste repositório:
+
+```bash
+cd backend-socket
+
+# 1. Compilar em Java Puro (sem Maven/Gradle)
+mkdir -p out
+javac -cp "lib/*" -d out $(find src -name "*.java")
+
+# 2. Executar o servidor
+java -cp "out:lib/*" com.helpdesk.socket.Main
+```
+
+### Execução via Docker
+
+```bash
+cd backend-socket
+
+# Build da imagem
+docker build -t helpdesk-backend-socket .
+
+# Execução do contêiner
+docker run -p 5000:5000 --env-file ../.env helpdesk-backend-socket
+```
 
 ---
 
-## Equipe e Licença
-* **Cauã Vasconcelos Grecco De Faria (25006367)**
-* **Rafael Trevisan (25002001)**
-* **Vinicius Fortes Heinzl (25008058)**
-* **Pedro Henrique Vieira Lima (25018202)** 
-* **Kaue Rodrigues Seixas (23011884)**
+## Pipeline de CI/CD (Sync com o Monorepo)
 
-**Projeto Integrador IV** — Curso de Análise e Desenvolvimento de Sistemas.  
-Este projeto é de caráter acadêmico e livre para fins de estudo.
+Este repositório possui uma automação em [`.github/workflows/sync-to-main.yml`](./.github/workflows/sync-to-main.yml).
+
+Sempre que alterações são integradas à branch `main` dentro da pasta `backend-socket/`, o GitHub Actions:
+1. Clona o repositório principal do grupo (`pi4-2026-2-0102-grupo2`).
+2. Sincroniza via `rsync` os arquivos compiláveis e de configuração para a pasta correspondente no monorepo.
+3. Cria um commit automatizado com a mensagem `chore(backend-socket): sync code from backend-socket repo (<SHA>)`.
+
+Isso permite que o desenvolvimento do módulo de socket ocorra de forma desacoplada sem comprometer a integridade do monorepo principal.
