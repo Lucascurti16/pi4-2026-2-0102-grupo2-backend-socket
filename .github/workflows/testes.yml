@@ -1,0 +1,52 @@
+name: Testes do Backend Socket
+
+# Roda os testes JUnit sempre que alguem abre PR ou manda codigo do backend-socket para a main.
+on:
+  pull_request:
+    paths:
+      - 'backend-socket/**'
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend-socket/**'
+  workflow_dispatch:
+
+jobs:
+  testes:
+    runs-on: ubuntu-latest
+    env:
+      JUNIT_JAR: ${{ runner.temp }}/junit.jar
+    steps:
+      - name: Baixar o codigo
+        uses: actions/checkout@v4
+
+      - name: Instalar o Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Baixar o JUnit
+        run: |
+          curl -fsSL -o "$JUNIT_JAR" \
+            https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.10.2/junit-platform-console-standalone-1.10.2.jar
+
+      - name: Compilar o servidor
+        working-directory: backend-socket
+        run: |
+          mkdir -p out/main
+          javac -encoding UTF-8 -cp "lib/*" -d out/main $(find src -name "*.java")
+
+      - name: Compilar os testes
+        working-directory: backend-socket
+        run: |
+          mkdir -p out/test
+          javac -encoding UTF-8 -cp "out/main:lib/*:$JUNIT_JAR" -d out/test $(find test -name "*.java")
+
+      - name: Rodar os testes
+        working-directory: backend-socket
+        run: |
+          java -jar "$JUNIT_JAR" execute \
+            --class-path "out/main:out/test:lib/*" \
+            --select-package com.helpdesk.socket
