@@ -46,5 +46,5 @@ jobs:
         working-directory: backend-socket
         run: |
           java -jar "$RUNNER_TEMP/junit.jar" execute \
-            --class-path "out/main:out/test:lib/*" \
+            --class-path "out/main:out/test:lib/gson.jar:lib/postgresql.jar" \
             --select-package com.helpdesk.socket

@@ -26,7 +26,7 @@ Dentro da pasta `backend-socket` (Linux, Mac ou Git Bash):
 mkdir -p out/main out/test
 javac -encoding UTF-8 -cp "lib/*" -d out/main $(find src -name "*.java")
 javac -encoding UTF-8 -cp "out/main:lib/*:CAMINHO/junit-platform-console-standalone-1.10.2.jar" -d out/test $(find test -name "*.java")
-java -jar CAMINHO/junit-platform-console-standalone-1.10.2.jar execute --class-path "out/main:out/test:lib/*" --select-package com.helpdesk.socket
+java -jar CAMINHO/junit-platform-console-standalone-1.10.2.jar execute --class-path "out/main:out/test:lib/gson.jar:lib/postgresql.jar" --select-package com.helpdesk.socket
 ```
 
 No Windows (PowerShell) o separador do classpath é `;` no lugar de `:`, e os arquivos `.java` precisam ser listados com `Get-ChildItem -Recurse -Filter *.java`.
