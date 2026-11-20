@@ -15,8 +15,6 @@ on:
 jobs:
   testes:
     runs-on: ubuntu-latest
-    env:
-      JUNIT_JAR: ${{ runner.temp }}/junit.jar
     steps:
       - name: Baixar o codigo
         uses: actions/checkout@v4
@@ -29,7 +27,7 @@ jobs:
 
       - name: Baixar o JUnit
         run: |
-          curl -fsSL -o "$JUNIT_JAR" \
+          curl -fsSL -o "$RUNNER_TEMP/junit.jar" \
             https://repo1.maven.org/maven2/org/junit/platform/junit-platform-console-standalone/1.10.2/junit-platform-console-standalone-1.10.2.jar
 
       - name: Compilar o servidor
@@ -42,11 +40,11 @@ jobs:
         working-directory: backend-socket
         run: |
           mkdir -p out/test
-          javac -encoding UTF-8 -cp "out/main:lib/*:$JUNIT_JAR" -d out/test $(find test -name "*.java")
+          javac -encoding UTF-8 -cp "out/main:lib/*:$RUNNER_TEMP/junit.jar" -d out/test $(find test -name "*.java")
 
       - name: Rodar os testes
         working-directory: backend-socket
         run: |
-          java -jar "$JUNIT_JAR" execute \
+          java -jar "$RUNNER_TEMP/junit.jar" execute \
             --class-path "out/main:out/test:lib/*" \
             --select-package com.helpdesk.socket
